@@ -146,8 +146,6 @@ def convert_mkv(mkv: Path, force: bool) -> Path:
                 "192k",
                 "-c:s",
                 "copy",
-                "-t",
-                "30",
                 f"{OUT_DIR_NAME_2}/{mkv.name}",
             ],
             cwd=mkv.parent.parent,
