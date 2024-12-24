@@ -2,7 +2,7 @@
 Script to throw out all audio except japanese and convert (english!) subs to something
 my LG tv supports and enable it by default
 
-Script requires you have installed mkvextract, mkvmerge and subtitleedit
+Script requires you have installed ffmpeg, mkvextract, mkvmerge and subtitleedit
 """
 import argparse
 from pathlib import Path
@@ -11,8 +11,9 @@ import json
 from typing import *
 
 
-OUT_DIR_NAME = "processed"
-SUBS_DIR_NAME = "processed_subs"
+SUBS_DIR_NAME = "1_converted_subs"
+OUT_DIR_NAME = "2_filtered_video"
+OUT_DIR_NAME_2 = "3_converted_video"
 
 
 def existing_directory(path: str) -> Path:
@@ -115,9 +116,50 @@ def create_mkv(mkv: Path, ass: Path, video_track: int, audio_track: int, force: 
     return new_filepath
 
 
+def convert_mkv(mkv: Path, force: bool) -> Path:
+    new_filepath = mkv.parent.parent / OUT_DIR_NAME_2 / mkv.name
+    if not new_filepath.exists() or force:
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-i",
+                f"{OUT_DIR_NAME}/{mkv.name}",
+                "-map",
+                "0:v:0",
+                "-map",
+                "0:a",
+                "-map",
+                "0:s",
+                "-map",
+                "-0:t",
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-preset",
+                "medium",
+                "-crf",
+                "23",
+                "-c:a",
+                "ac3",
+                "-b:a",
+                "192k",
+                "-c:s",
+                "copy",
+                f"{OUT_DIR_NAME_2}/{mkv.name}",
+            ],
+            cwd=mkv.parent.parent,
+            check=True,
+        )
+        assert new_filepath.exists()
+    else:
+        print("new mkv already created")
+    return new_filepath
 
-def _main(dir: Path, debug: bool=False, force: bool=False) -> None:
+
+def _main(dir: Path, reencode: bool=False, debug: bool=False, force: bool=False) -> None:
     (dir / OUT_DIR_NAME).mkdir(parents=True, exist_ok=True)
+    (dir / OUT_DIR_NAME_2).mkdir(parents=True, exist_ok=True)
     (dir / SUBS_DIR_NAME).mkdir(parents=True, exist_ok=True)
 
     src_mkvs = list(dir.glob("*.mkv"))
@@ -128,7 +170,8 @@ def _main(dir: Path, debug: bool=False, force: bool=False) -> None:
         sup = extract_subs(mkv, sub_track, force)
         ass = convert_subs(sup, force)
         new_mkv = create_mkv(mkv, ass, video_track, audio_track, force)
-
+        if reencode:
+            new_mkv = convert_mkv(new_mkv, force)
         if debug:
             print("[debug] exit early")
             break
@@ -153,8 +196,14 @@ def main() -> None:
         action="store_true",
         default=False,
     )
+    parser.add_argument(
+        "-r, --reencode",
+        dest="reencode",
+        action="store_true",
+        default=False,
+    )
     args = parser.parse_args()
-    _main(args.dir, args.debug, args.force)
+    _main(args.dir, args.reencode, args.debug, args.force)
 
 
 if __name__ == "__main__":
