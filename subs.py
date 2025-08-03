@@ -6,6 +6,7 @@ Script requires you have installed ffmpeg, mkvextract, mkvmerge and subtitleedit
 """
 import argparse
 from pathlib import Path
+import shutil
 import subprocess
 import json
 from typing import *
@@ -40,7 +41,12 @@ def get_track_ids(info: dict) -> Tuple[int, int, int]:
 
     audio_tracks = [t for t in info["tracks"] if t["type"] == "audio"]
     if len(audio_tracks) > 1:
-        audio_tracks = [t for t in audio_tracks if "japanese" in t["properties"].get("track_name", "").lower()]
+        audio_tracks = [
+            t for t in audio_tracks if (
+                "japanese" in t["properties"].get("track_name", "").lower() or
+                "jpn" in t["properties"].get("language", "").lower()
+            )
+        ]
     assert len(audio_tracks) == 1
 
     sub_tracks = [t for t in info["tracks"] if t["type"] == "subtitles"]
@@ -63,8 +69,10 @@ def get_track_ids(info: dict) -> Tuple[int, int, int]:
         sub_tracks = [next(t for t in sub_tracks if penalty(t) == min_penalty)]
     assert len(sub_tracks) == 1
 
+    do_sub_convert = sub_tracks[0].get("codec") not in ["SubStationAlpha", "AdvancedSubStationAlpha"]
+
     print("got track ids")
-    return video_tracks[0]["id"], audio_tracks[0]["id"], sub_tracks[0]["id"]
+    return video_tracks[0]["id"], audio_tracks[0]["id"], sub_tracks[0]["id"], do_sub_convert
 
 
 def extract_subs(filepath: Path, track: int, force: bool) -> Path:
@@ -81,14 +89,17 @@ def extract_subs(filepath: Path, track: int, force: bool) -> Path:
     return sub_filepath
 
 
-def convert_subs(filepath: Path, force: bool) -> Path:
+def convert_subs(filepath: Path, do_sub_convert: bool, force: bool) -> Path:
     new_filepath = filepath.parent / filepath.with_suffix(".ass").name
     if not new_filepath.exists() or force:
-        subprocess.run(
-            ["SubtitleEdit", "/convert", filepath.name, "AdvancedSubStationAlpha"],
-            cwd=filepath.parent,
-            check=True,
-        )
+        if do_sub_convert:
+            subprocess.run(
+                ["SubtitleEdit", "/convert", filepath.name, "AdvancedSubStationAlpha"],
+                cwd=filepath.parent,
+                check=True,
+            )
+        else:
+            shutil.copy(filepath, new_filepath)
         assert new_filepath.exists()
     else:
         print("subs already converted")
@@ -174,9 +185,9 @@ def _main(dir: Path, reencode: bool=False, debug: bool=False, force: bool=False)
     for i, mkv in enumerate(src_mkvs):
         print(f"+ {i+1}/{len(src_mkvs)} {mkv.name}")
         info = get_mkv_info(mkv)
-        video_track, audio_track, sub_track = get_track_ids(info)
+        video_track, audio_track, sub_track, do_sub_convert = get_track_ids(info)
         sup = extract_subs(mkv, sub_track, force)
-        ass = convert_subs(sup, force)
+        ass = convert_subs(sup, do_sub_convert, force)
         new_mkv = create_mkv(mkv, ass, video_track, audio_track, force)
         if reencode:
             new_mkv = convert_mkv(new_mkv, force)
