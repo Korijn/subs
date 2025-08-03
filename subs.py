@@ -51,8 +51,16 @@ def get_track_ids(info: dict) -> Tuple[int, int, int]:
                 "english" in t["properties"].get("track_name", "").lower()
             )
         ]
+
     if len(sub_tracks) > 1:
-        sub_tracks = [sorted(sub_tracks, key=lambda t: t["properties"].get("num_index_entries", 0), reverse=True)[0]]
+        blacklist = ["songs", "dub", "commentary"]
+
+        def penalty(track):
+            name = track["properties"].get("track_name", "").lower()
+            return sum(word in name for word in blacklist)
+
+        min_penalty = min(penalty(t) for t in sub_tracks)
+        sub_tracks = [next(t for t in sub_tracks if penalty(t) == min_penalty)]
     assert len(sub_tracks) == 1
 
     print("got track ids")
